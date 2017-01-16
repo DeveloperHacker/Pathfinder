@@ -92,6 +92,20 @@ function Stream:indexedReduce(reducor)
     return result
 end
 
+function Stream:reformat(reformater)
+    return self:indexedReformat(function (key, value) return reformater(value) end)
+end
+
+function Stream:indexedReformat(reformater)
+    local result = {}
+    for key, value in pairs(self.instance) do
+        local key, value = reformater(key, value)
+        result[key] = value    
+    end
+    return Stream:new(result)
+end
+
+
 function Stream:map(mapper)
     return self:indexedMap(function (key, value) return mapper(value) end)
 end
@@ -182,6 +196,18 @@ function Stream:max()
         end
     end 
     return max, maxKey
+end
+
+function Stream:all()
+    return self:reduce(function (result, value)
+        return result and value
+    end)
+end
+
+function Stream:any()
+    return self:reduce(function (result, value)
+        return result or value
+    end)
 end
 
 return Stream

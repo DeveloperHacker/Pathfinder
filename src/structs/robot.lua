@@ -5,16 +5,11 @@ local Loader = dofile("structs/loader.lua")
 
 local Robot = {}
 
-function Robot:load(path)
-    local args = Loader.arguments(path)
-    assert(#args == 6)
-    local color = tonumber(args[1])
-    local lightColor = tonumber(args[2])
-    local direct = Direct.valueOf(args[3])
-    local position = Vector:new(tonumber(args[4]), tonumber(args[5]), tonumber(args[6]))
-    if (not direct) then
-        error("Wrong Arguments: direct is not recognised")
-    end
+function Robot:load(config)
+    local color = config.color
+    local lightColor = config.lightColor
+    local position = config.position
+    local direct = config.direct
     return Robot:init(color, lightColor, position, direct)
 end
 
@@ -24,6 +19,7 @@ function Robot:init(color, lightColor, position, direct)
         position = position,
         direct = direct
     }
+    object.name = object.robot.name() 
     object.robot.setLightColor(lightColor)
     require("component").colors.setColor(color)
     self.__index = self
@@ -100,17 +96,21 @@ function Robot:turn(direct)
     end
 end
 
-function Robot:wait(index, way)
-
-end
-
-function Robot:go(direct)
-    if (direct:equals(Direct.Up)) then
-        return not self.robot.detectUp() and self:up()
-    elseif (direct:equals(Direct.Down)) then
-        return not self.robot.detectDown() and self:down()
-    else
-        return self:turn(direct) and not self.robot.detect() and self:forward()
+function Robot:go(way, map)
+    local it = way:iterator()
+    while (it:hasNext()) do
+        local direct = it:next()
+        local result
+        if (direct:equals(Direct.Up)) then
+            result = not self.robot.detectUp() and self:up()
+        elseif (direct:equals(Direct.Down)) then
+            result = not self.robot.detectDown() and self:down()
+        else
+            result = self:turn(direct) and not self.robot.detect() and self:forward()
+        end
+        if (not result) then
+            it:back()
+        end
     end
 end
 

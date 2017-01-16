@@ -32,18 +32,15 @@ function Map:new(position, size, blocks)
     return setmetatable(object, self)
 end
 
-function Map:load(path)
-    local args = Loader.arguments(path)
-    assert(#args > 6)
-    local position = Vector:new(tonumber(args[1]), tonumber(args[2]), tonumber(args[3]))
-    local size = Vector:new(tonumber(args[4]), tonumber(args[5]), tonumber(args[6]))
-    assert(#args == 6 + size.x * size.y * size.z)
-    local blocks = table.pack(table.unpack(args, 7, #args))
-    blocks.n = nil
+function Map:load(config)
+    local position = config.position
+    local size = config.size
+    local blocks = config.blocks
+    assert(#blocks == size.x * size.y * size.z)
     for i = 1, #blocks do
-        if (blocks[i] == "0") then
+        if (blocks[i] == 0) then
             blocks[i] = Block:new(inf, Vector:new(0, 0, 0), Vector:new(0, 0, 0))
-        elseif (blocks[i] == "1") then
+        elseif (blocks[i] == 1) then
             blocks[i] = nil
         else
             error(string.format("Undefound map token %s", blocks[i]))
