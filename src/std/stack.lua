@@ -11,6 +11,10 @@ function Stack:new()
     return setmetatable(object, self)
 end
 
+function Stack:contains(value)
+    return self._deque:contains(value)
+end
+
 function Stack:push(value)
     return self._deque:leftPush(value)
 end

@@ -1,6 +1,7 @@
 
 local Queue = dofile("std/queue.lua")
 local Vector = dofile("math/vector.lua")
+local Stream = dofile("std/stream.lua")
 local event = require("event")
 local logger = dofile("structs/logger.lua")
 
@@ -17,7 +18,10 @@ function Message:new(name, from, args)
 end
 
 function Message.valueOf(text)
-    local args = split(text, " ")
+    local args = {}
+    for token in string.gmatch(text, "%S+") do
+        args[#args + 1] = token
+    end
     local name = args[1]
     if (name == "time") then
         if (#args ~= 3) then return nil end
@@ -51,7 +55,7 @@ function Message.valueOf(text)
         local x = tonumber(args[3])
         local y = tonumber(args[4])
         local z = tonumber(args[5])
-        if (not from or not x or not y or not z or not control or (control ~= x + y + z)) then return nil end
+        if (not from or not x or not y or not z) then return nil end
         return Message:new(name, from, {position = Vector:new(x, y, z)})
     else
         return nil
@@ -65,57 +69,79 @@ function Transmitter:new(serverPort, robotPort)
         modem = require("component").modem,
         serverPort = serverPort,
         robotPort = robotPort,
-        messages = Queue:new()
+        dump = Queue:new()
     }
     object.modem.open(serverPort)
     object.modem.open(robotPort)
-    event.listen("modem_message", self:listener())
     self.__index = self
     return setmetatable(object, self)
 end
 
-function Transmitter:sync(robotName, robotPositions, start, stop, coins)
-    transmitter:sendSync(robotName, robotPositions[robotName])
-    local messages = self.messages
-    self.messages = Queue:new()
-    local change = false
-    for _, message in pairs(messages) do
-        local name = message.name
-        if (name == "sync") then
-            robotPositions[message.from] = message.args.position
-        elseif (name == "gamestart") then
-            start = true
-        elseif (name == "gamestop") then
-            stop = true
-        elseif (name == "setcoin") then
-            local coin = message.args.position
-            coins[coin:toString()] = coin
-            change = true
-        elseif (name == "unsetcoin") then
-            local coin = message.args.position
-            coins[coin:toString()] = nil
-            change = true
+function Transmitter:messages()
+    local messages = self.dump
+    self.dump = Queue:new()
+    return messages
+end
+
+function Transmitter:sync(robot, robotPositions, start, stop, coins, fully)
+    robotPositions[robot.name] = robot.position
+    local robots = {}
+    for name, point in pairs(robots) do
+        robots[name] = false
+    end
+    local sync = false
+    local change = fully or false
+    while (not sync) do
+        local position = robotPositions[robot.name]
+        self:send(self.robotPort, string.format("sync %s %d %d %d", robot.name, position.x, position.y, position.z)) 
+        local it = self:messages():iterator()
+        while (it:hasNext()) do
+            local message = it:next()
+            local name = message.name
+            if (name == "sync") then
+                robotPositions[message.from] = message.args.position
+                robots[message.from] = true
+            elseif (name == "gamestart") then
+                start = true
+            elseif (name == "gamestop") then
+                stop = true
+            elseif (name == "setcoin") then
+                local coin = message.args.position
+                coins[coin:toString()] = coin
+                change = true
+            elseif (name == "unsetcoin") then
+                local coin = message.args.position
+                coins[coin:toString()] = nil
+                change = true
+            end
         end
+        sync = not change or Stream.valueOf(robots):all()
+        os.sleep(sync and 1 or 2)
     end
     return robotPositions, start, stop, coins, change
 end
 
-function Transmitter:sendSync(robotName, position)
-    self.modem.broadcast(self.robotPort, string.format("sync %s %d %d %d", robotName, position.x, position.y, position.z))
+function Transmitter:send(port, text)
+    self.modem.broadcast(port, text)
+    logger.outputMessage(text)
 end
 
-function Transmitter:listener()
-    return function (event, rec_addr, from, port, distance, text)
-        if (port == self.serverPort or port == self.serverPort) then
-            local message = Message:valueOf(text)
+function Transmitter:init()
+    event.listen("modem_message", function (event, rec_addr, from, port, distance, text)
+        if (port == self.robotPort or port == self.serverPort) then
+            local message = Message.valueOf(text)
             if (message == nil) then
-                logger.info(string.format("Message \"%s\" have wrong format", text))
+                logger.errorMessage(string.format("Message \"%s\" have wrong format", text))
+            else
+                if (message.from == "server") then
+                    logger.inputServerMessage(text)
+                else
+                    logger.inputRobotMessage(text)
+                end
+                self.dump:push(message)
             end
-            logger.message(text)
-            self.messages:push(message)
         end
-        event.listen("modem_message", self:listener())
-    end
+    end)
 end
 
 return Transmitter

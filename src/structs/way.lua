@@ -44,6 +44,10 @@ function Way:get(index)
     return self.steps[index]
 end
 
+function Way:last()
+    return self:get(self:length())
+end
+
 function Way:length()
     return #(self.steps)
 end

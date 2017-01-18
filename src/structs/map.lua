@@ -2,6 +2,7 @@
 local Vector = dofile("math/vector.lua")
 local Loader = dofile("structs/loader.lua")
 local Queue = dofile("std/queue.lua")
+local Stack = dofile("std/stack.lua")
 local Direct = dofile("structs/direct.lua")
 local Way = dofile("structs/way.lua")
 local Graph = dofile("math/graph.lua")
@@ -35,15 +36,15 @@ end
 function Map:load(config)
     local position = config.position
     local size = config.size
-    local blocks = config.blocks
-    assert(#blocks == size.x * size.y * size.z)
-    for i = 1, #blocks do
-        if (blocks[i] == 0) then
-            blocks[i] = Block:new(inf, Vector:new(0, 0, 0), Vector:new(0, 0, 0))
-        elseif (blocks[i] == 1) then
+    local blocks = {}
+    assert(#(config.blocks) == size.x * size.y * size.z)
+    for i = 1, #(config.blocks) do
+        if (config.blocks[i] == 0) then
+            blocks[i] = Block:new(inf, Vector.zero(), Vector.zero())
+        elseif (config.blocks[i] == 1) then
             blocks[i] = nil
         else
-            error(string.format("Undefound map token %s", blocks[i]))
+            error(string.format("Undefound map token %s", config.blocks[i]))
         end
     end
     return Map:new(position, size, blocks)
@@ -75,9 +76,12 @@ function Map:get(point)
     return self.blocks[self:index(point)]
 end
 
-function Map:set(point, block)
+function Map:set(point, value, direct, navigation)
     if (not self:contains(point)) then return false end
-    self.blocks[self:index(point)] = block
+    local block = self.blocks[self:index(point)]
+    block.value = value
+    block.direct = direct
+    block.navigation = navigation
     return true
 end
 
@@ -87,17 +91,24 @@ function Map:contains(point)
            (self.position.z <= point.z) and (point.z < (self.position.z + self.size.z))
 end
 
-
 function Map:findWay(start, finish, direct)
     if (not self:get(start)) then return nil end
     if (not self:get(finish)) then return nil end
-    self:set(start, Block:new(0, direct, Vector:new(0, 0, 0)))
+    self:set(start, 0, direct, Vector.zero())
     local queue = Queue:new()
-    queue:push(start)    
+    queue:push(start)
+    local computer = require("computer")
+    print(string.format("memory:    %6d / %6d", computer.freeMemory(), computer.totalMemory()))
+    local j = 1
+    local around = {Direct.North, Direct.South, Direct.West, Direct.East, Direct.Up, Direct.Down}
     while (not queue:isEmpty()) do
         local current = queue:pull()
         local currentBlock = self:get(current)
-        local around = {Direct.North, Direct.South, Direct.West, Direct.East, Direct.Up, Direct.Down}
+        if (j % 100 == 0) then
+            print(string.format("memory[%3d]{%3d}: %6d / %6d", j, queue:length(), computer.freeMemory(), computer.totalMemory()))
+            os.sleep(0.2)
+        end
+        j = j + 1
         for i = 1, #around do
             local navigation = around[i]
             local path = current + navigation
@@ -108,11 +119,14 @@ function Map:findWay(start, finish, direct)
             local block = self:get(path)
             if (block and fine < block.value) then
                 local direct = navigation.z == 0 and navigation or currentBlock.direct
-                self:set(path, Block:new(fine, direct, navigation))
-                queue:push(path)
+                self:set(path, fine, direct, navigation)
+                if (not queue:contains(path)) then
+                    queue:push(path)
+                end
             end
         end
     end
+    print("way builded")
     if (self:get(finish) == inf) then
         self:repair()
         return nil
@@ -165,6 +179,14 @@ function Map:findCheckpointTraversal(checkpoints)
         prev = cur
     end
     return traversal
+end
+
+function Map:subCoins(coins, robotPostions)
+    local robotCoins = {}
+    for name, _ in pairs(robotPostions) do
+        robotCoins[name] = coins
+    end
+    return robotCoins
 end
 
 return Map

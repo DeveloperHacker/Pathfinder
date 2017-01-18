@@ -109,9 +109,13 @@ function Robot:go(way, map)
             result = self:turn(direct) and not self.robot.detect() and self:forward()
         end
         if (not result) then
+            if (way:last():equals(self.position + self.direct)) then
+                return false
+            end
             it:back()
         end
     end
+    return true
 end
 
 return Robot

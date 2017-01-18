@@ -53,6 +53,16 @@ function Deque:length()
     return self._length
 end
 
+function Deque:contains(value)
+    local it = self:iterator()
+    while (it:hasNext()) do
+        if (it:next() == value) then
+            return true
+        end
+    end
+    return false
+end
+
 function Deque:leftPush(value)
     local leaf = Leaf:new(value)
     if (self:isEmpty()) then
@@ -73,6 +83,9 @@ function Deque:leftPull()
         local leaf = self._head
         self._head = self._head.right
         self._length = self._length - 1
+        leaf.left = nil
+        leaf.right = nil
+        if (self._head) then self._head.left = nil end
         return leaf.value
     end
 end
@@ -97,6 +110,9 @@ function Deque:rightPull()
         local leaf = self._tail
         self._tail = self._tail.left
         self._length = self._length - 1
+        leaf.left = nil
+        leaf.right = nil
+        if (self._tail) then self._tail.right = nil end
         return leaf.value
     end
 end

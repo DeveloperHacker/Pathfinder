@@ -11,6 +11,10 @@ function Queue:new()
     return setmetatable(object, self)
 end
 
+function Queue:contains(value)
+    return self._deque:contains(value)
+end
+
 function Queue:push(value)
     return self._deque:leftPush(value)
 end

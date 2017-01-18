@@ -10,6 +10,12 @@ function Vector:new(x, y, z)
     return setmetatable(object, self)
 end
 
+local zero = Vector:new(0, 0, 0)
+
+function Vector.zero()
+    return zero
+end
+
 function Vector:clone() -- const
     return Vector:new(self.x, self.y, self.z)
 end

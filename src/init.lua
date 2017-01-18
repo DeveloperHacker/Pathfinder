@@ -1,13 +1,16 @@
 
 local Robot = dofile("structs/robot.lua")
 local Map = dofile("structs/map.lua")
+local Way = dofile("structs/way.lua")
 local Transmitter = dofile("structs/transmitter.lua")
 local logger = dofile("structs/logger.lua")
 local Stream = dofile("std/stream.lua")
 
 local function main()
-    local transmitter = Transmitter:new(100, 200)
-
+    local computer = require("computer")
+    print(string.format("memory:    %6d / %6d", computer.freeMemory(), computer.totalMemory()))
+    local transmitter = Transmitter:new(12345, 200)
+    transmitter:init()
     local config = dofile("config.lua")
     local robot = Robot:load(config.robot)
     local map = Map:load(config.map)
@@ -15,33 +18,23 @@ local function main()
     local home = robot.position
     local base = config.main.base
     local baseDirect = config.main.baseDirect
-    -- local checkpoints = {
-    --     home,
-    --     Vector:new(391, 447, 55),
-    --     Vector:new(390, 451, 56),
-    --     Vector:new(392, 452, 57),
-    --     Vector:new(390, 453, 55),
-    --     Vector:new(395, 452, 56)
-    -- }
+    local roundTime = config.main.roundTime
+    local averageStepTime = config.main.averageStepTime
     local robotPositions = {}
     local start = false
     local stop = false
     local coins = {}
-    local robots = Stream.valueOf(robotNames):reformat(function (value) return value, false end):toTable()
-    while (not Stream.valueOf(robots):all()) do
-        robotPositions[robot.name] = robot.position
-        robotPositions, start, stop, coins, change = transmitter:sync(robot.name, robotPositions, start, stop, coins)
-        for name, position in pairs(robotPositions)
-            robots[name] = true
-        end
-    end
+    logger.info("init")
+    robotPositions, start, stop, coins, change = transmitter:sync(robot, robotPositions, start, stop, coins, true)
     logger.info("ready")
     while (not start) do
-        robotPositions[robot.name] = robot.position
-        robotPositions, start, stop, coins, change = transmitter:sync(robot.name, robotPositions, start, stop, coins)
+        robotPositions, start, stop, coins, change = transmitter:sync(robot, robotPositions, start, stop, coins)
+        os.sleep(2)
     end
+    local startTime = os.clock()
     logger.info("start")
-    while (not stop) do
+    local homepath = Way:new()
+    while ((homepath:length() * 2 * averageStepTime) < (roundTime - os.clock() - startTime)) do
         local robotCoins = map:subCoins(coins, robotPositions)
         local checkpoints = robotCoins[robot.name]
         if (#checkpoints > 0) then
@@ -50,22 +43,23 @@ local function main()
             local it = traversal:iterator()
             while (it:hasNext()) do
                 local way = it:next()
-                robot:go(way, map)
-                robotPositions[robot.name] = robot.position
-                robotPositions, start, stop, coins, change = transmitter:sync(robot.name, robotPositions, start, stop, coins)
+                local complite = robot:go(way, map)
+                robotPositions, start, stop, coins, change = transmitter:sync(robot, robotPositions, start, stop, coins)
                 if (change) then break end
+                if (not complite and it:hasNext()) then
+                    
+                end
             end
         else
             local way = map:findWay(robot.position, base, robot.direct)
             robot:go(way, map)
             robot:turn(baseDirect)
-            change = false
-            while (not change) do
-                robotPositions[robot.name] = robot.position
-                robotPositions, start, stop, coins, change = transmitter:sync(robot.name, robotPositions, start, stop, coins)
-            end
+            robotPositions, start, stop, coins, change = transmitter:sync(robot, robotPositions, start, stop, coins, true)
         end
+        homepath = map:findWay(robot.position, home, robot.direct)
     end
+    logger.info("home")
+    robot:go(homepath, map)
     logger.info("stop")
     return 0
 end
