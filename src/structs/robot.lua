@@ -1,25 +1,27 @@
 local Vector = dofile("math/vector.lua")
 local Direct = dofile("structs/direct.lua")
+local Queue = dofile("std/queue.lua")
 local Way = dofile("structs/way.lua")
 local Loader = dofile("structs/loader.lua")
 
 local Robot = {}
 
-function Robot:load(config)
+function Robot.load(config)
     local color = config.color
     local lightColor = config.lightColor
     local position = config.position
     local direct = config.direct
-    return Robot:init(color, lightColor, position, direct)
+    local name = config.name
+    return Robot:init(color, lightColor, position, direct, name)
 end
 
-function Robot:init(color, lightColor, position, direct)
+function Robot:init(color, lightColor, position, direct, name)
     local object = {
         robot = require("robot"),
         position = position,
-        direct = direct
-    }
-    object.name = object.robot.name() 
+        direct = direct,
+        name = name
+    } 
     object.robot.setLightColor(lightColor)
     require("component").colors.setColor(color)
     self.__index = self
@@ -56,6 +58,18 @@ function Robot:down()
         self.position = self.position + Direct.Down
     end
     return result
+end
+
+function Robot:suck()
+    return self.robot.suck()
+end
+
+function Robot:suckDown()
+    return self.robot.suckDown()
+end
+
+function Robot:dropDown()
+    return self.robot.dropDown()
 end
 
 function Robot:turnLeft()
@@ -96,8 +110,10 @@ function Robot:turn(direct)
     end
 end
 
-function Robot:go(way, map)
+function Robot:go(way, map, regenerate, changeDesire)
+    local removed = Queue:new()
     local it = way:iterator()
+    local fine = 0
     while (it:hasNext()) do
         local direct = it:next()
         local result
@@ -109,13 +125,56 @@ function Robot:go(way, map)
             result = self:turn(direct) and not self.robot.detect() and self:forward()
         end
         if (not result) then
-            if (way:last():equals(self.position + self.direct)) then
-                return false
+            self:suck()
+            local obstacle = self.position + direct
+            if (way.finish:equals(obstacle)) then
+                break
             end
-            it:back()
+            local block = map:remove(obstacle)
+            removed:push({obstacle, block})
+            if (regenerate) then
+                way = regenerate(self, way, map)
+            else
+                way = map:findWay(self.position, way.finish, self.direct)
+            end
+            it = way:iterator()
+            if (removed:length() > 2) then
+                local pair = removed:pull()
+                map:restore(table.unpack(pair))
+            end
+            fine = fine + 2
+            if (fine > 6) then
+                break
+            end
+        else
+            if (changeDesire and it:hasNext()) then
+                way, it = changeDesire(self, way, it, map)
+            end
+        end
+        fine = (fine > 0) and (fine - 1) or fine
+    end
+    local it = removed:iterator()
+    while (it:hasNext()) do
+        map:restore(table.unpack(it:next()))
+    end
+    return self.position:equals(way.finish)
+end
+
+function Robot:optimal(map, base, coins, positions)
+    positions[self.name] = self.position
+    local min = nil
+    local minWay = nil
+    for _, pair in pairs(coins) do
+        local coin = pair[1]
+        local time = os.time() - pair[2]
+        local way = map:findWay(self.position, coin, self.direct)
+        local length = way:length() * time
+        if (not min or min > length) then
+            min = length
+            minWay = way
         end
     end
-    return true
+    return minWay or map:findWay(self.position, base, self.direct)
 end
 
 return Robot

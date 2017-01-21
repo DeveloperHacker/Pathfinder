@@ -2,85 +2,106 @@
 local Vector = dofile("math/vector.lua")
 local Direct = dofile("structs/direct.lua")
 
-local config = {}
+local configurator = {}
 
--- Deadalus
+function configurator.config(home, color)
 
-config.robot = {
-    -- Blue
-    color = 0x20afff,
-    lightColor = 0x20afff,
-    direct = Direct.North,
-    position = Vector:new(-973, 631, 12)
-    -- position = Vector:new(-975, 631, 12)
-    -- position = Vector:new(-975, 629, 12)
-    -- position = Vector:new(-973, 629, 12)
+    local config = {}
 
-    -- -- Green
-    -- color = 0xafff20,
-    -- lightColor = 0xafff20,
-    -- direct = Direct.North,
-    
-    -- -- Red
-    -- color = 0xff2020,
-    -- lightColor = 0xff2020,
-    -- direct = Direct.North,
-    
-    -- -- Yellow
-    -- color = 0xffff20,
-    -- lightColor = 0xffff20,
-    -- direct = Direct.North,
+    config.map = {}
+    config.main = {}
+    config.robot = {}
+    config.transmitter = {}
 
-}
+    config.transmitter.server = 12345
+    config.transmitter.robot = 200
+    config.transmitter.names = {}
+    local names = {"Daedalus", "Skynet", "Cairol", "Shakey"}
+    for i, name in pairs(names) do
+        if (home == i) then
+            config.robot.name = name
+        else 
+            config.transmitter.names[#(config.transmitter.names) + 1] = name
+        end
+    end    
 
-config.main = {
-    base = Vector:new(-957, 637, 12),
-    baseDirect = Direct.East,
+    config.robot.inst = require("robot")
+    if (color == "blue") then
+        config.robot.color = 0x20afff
+        config.robot.lightColor = 0x20afff
+        config.robot.direct = Direct.East
 
-    -- base = Vector:new(-964, 630, 12),
-    -- baseDirect = Direct.South,
+        local cneter = Vector:new(-975, 630, 12)
 
-    -- base = Vector:new(-957, 623, 12),
-    -- baseDirect = Direct.West,
+        config.main.homes = {}
+        config.main.homes[1] = cneter + Direct.South + Direct.East
+        config.main.homes[2] = cneter + Direct.South + Direct.West
+        config.main.homes[3] = cneter + Direct.North + Direct.West
+        config.main.homes[4] = cneter + Direct.North + Direct.East
+        config.main.homes[5] = cneter
+        config.robot.position = config.main.homes[home]
 
-    -- base = Vector:new(-950, 630, 12),
-    -- baseDirect = Direct.North,
+    elseif (color == "green") then
+        config.robot.color = 0xafff20
+        config.robot.lightColor = 0xafff20
+        config.robot.direct = Direct.South
 
-    -- Blue
-    homes = {
-        Vector:new(-974, 630, 12),
-        Vector:new(-973, 631, 12),
-        Vector:new(-975, 631, 12),
-        Vector:new(-975, 629, 12),
-        Vector:new(-973, 629, 12)
-    },
-    -- -- Green
-    -- homes = {
-    --     Vector:new(-957, 613, 12)
-    -- }
-    -- -- Red
-    -- homes = {
-    --     Vector:new(-940, 630, 12)
-    -- }
-    -- -- Yellow
-    -- homes = {
-    --     Vector:new(-957, 647, 12)
-    -- }
+        local cneter = Vector:new(-958, 613, 12)
 
-    roundTime = 5 * 60, -- in seconds
-    averageStepTime = 0.5,
-    robotNames = {
-        "Skynet",
-        "Cariol",
-        "Shakey",
-        "Deadalus"
+        config.main.homes = {}
+        config.main.homes[1] = cneter + Direct.South + Direct.East
+        config.main.homes[2] = cneter + Direct.South + Direct.West
+        config.main.homes[3] = cneter + Direct.North + Direct.West
+        config.main.homes[4] = cneter + Direct.North + Direct.East
+        config.main.homes[5] = cneter
+        config.robot.position = config.main.homes[home]
+
+    elseif (color == "red") then
+        config.robot.color = 0xff2020
+        config.robot.lightColor = 0xff2020
+        config.robot.direct = Direct.West
+
+        local cneter = Vector:new(-941, 630, 12)
+
+        config.main.homes = {}
+        config.main.homes[1] = cneter + Direct.South + Direct.East
+        config.main.homes[2] = cneter + Direct.South + Direct.West
+        config.main.homes[3] = cneter + Direct.North + Direct.West
+        config.main.homes[4] = cneter + Direct.North + Direct.East
+        config.main.homes[5] = cneter
+        config.robot.position = config.main.homes[home]
+
+    elseif (color == "yellow") then
+        config.robot.color = 0xffff20
+        config.robot.lightColor = 0xffff20
+        config.robot.direct = Direct.North
+
+        local cneter = Vector:new(-958, 647, 12)
+
+        config.main.homes = {}
+        config.main.homes[1] = cneter + Direct.South + Direct.East
+        config.main.homes[2] = cneter + Direct.South + Direct.West
+        config.main.homes[3] = cneter + Direct.North + Direct.West
+        config.main.homes[4] = cneter + Direct.North + Direct.East
+        config.main.homes[5] = cneter
+        config.robot.position = config.main.homes[home]
+    end
+
+    local bases = {
+        { base = Vector:new(-958, 637, 12), direct = Direct.North },
+        { base = Vector:new(-965, 630, 12), direct = Direct.East  },
+        { base = Vector:new(-958, 623, 12), direct = Direct.South },
+        { base = Vector:new(-951, 630, 12), direct = Direct.West  }
     }
-}
+    
+    config.main.averageStepTime = 2
+    config.main.averageCalcTime = 2
+    config.main.base = bases[home].base
+    config.main.direct = bases[home].direct
 
-config.map = {
-    position = Vector:new(-978, 609, 12),
-    size = Vector:new(43, 43, 2),
-    blocks = {
+    config.map.position = Vector:new(-979, 609, 12)
+    config.map.size = Vector:new(43, 43, 2)
+    config.map.blocks = {
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -169,6 +190,8 @@ config.map = {
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
     }
-}
 
-return config
+    return config
+end 
+
+return configurator

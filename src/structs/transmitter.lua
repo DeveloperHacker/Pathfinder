@@ -4,6 +4,25 @@ local Vector = dofile("math/vector.lua")
 local Stream = dofile("std/stream.lua")
 local event = require("event")
 local logger = dofile("structs/logger.lua")
+local serialization = require("serialization")
+
+local SyncData = {}
+
+function SyncData:new(data)
+    local object = {
+        data = data
+    }
+    self.__index = self
+    return setmetatable(object, self)
+end
+
+function SyncData:latch()
+    local data = {}
+    for name, value in pairs(self.data) do
+        data[name] = value
+    end
+    return data
+end
 
 local Message = {}
 
@@ -17,18 +36,14 @@ function Message:new(name, from, args)
     return setmetatable(object, self)
 end
 
-function Message.valueOf(text)
-    local args = {}
-    for token in string.gmatch(text, "%S+") do
-        args[#args + 1] = token
-    end
+function Message.valueOf(args)
     local name = args[1]
     if (name == "time") then
         if (#args ~= 3) then return nil end
         local remainig = tonumber(args[2])
         local total = tonumber(args[3])
         if (not total or not remainig) then return nil end
-        return Message:new(name, "server", {remainig = remainig, total = total})
+        return Message:new(name, "server", {remainig = remainig, total = total, clock = os.clock()})
     elseif (name == "gamestart") then
         if (#args ~= 1) then return nil end
         return Message:new(name, "server", {})
@@ -38,25 +53,34 @@ function Message.valueOf(text)
     elseif (name == "setcoin") then
         if (#args ~= 4) then return nil end
         local x = tonumber(args[2])
-        local z = tonumber(args[3])
+        local z = tonumber(args[3]) + 1
         local y = tonumber(args[4])
         if (not x or not y or not z) then return nil end
         return Message:new(name, "server", {position = Vector:new(x, y, z)})
     elseif (name == "unsetcoin") then
         if (#args ~= 4) then return nil end
         local x = tonumber(args[2])
-        local z = tonumber(args[3])
+        local z = tonumber(args[3]) + 1
         local y = tonumber(args[4])
         if (not x or not y or not z) then return nil end
         return Message:new(name, "server", {position = Vector:new(x, y, z)})   
     elseif (name == "sync") then
-        if (#args ~= 5) then return nil end
+        if (#args ~= 5 and #args ~= 8) then return nil end
         local from = args[2]
+        if (not from) then return nil end
         local x = tonumber(args[3])
         local y = tonumber(args[4])
         local z = tonumber(args[5])
-        if (not from or not x or not y or not z) then return nil end
-        return Message:new(name, from, {position = Vector:new(x, y, z)})
+        if (not x or not y or not z) then return nil end
+        local position = Vector:new(x, y, z)
+        local x = tonumber(args[6])
+        local y = tonumber(args[7])
+        local z = tonumber(args[8])
+        local coin = nil 
+        if (x and y and z) then 
+            coin = Vector:new(x, y, z)
+        end
+        return Message:new(name, from, {position = position, coin = coin})
     else
         return nil
     end
@@ -64,73 +88,76 @@ end
 
 local Transmitter = {}
 
-function Transmitter:new(serverPort, robotPort)
+function Transmitter.load(config)
+    local syncs = {}
+    for _, name in pairs(config.names) do syncs[name] = false end
+    local data = {
+        ["coins"] = {},
+        ["positions"] = {},
+        ["syncs"] = syncs,
+        ["start"] = false,
+        ["stop"] = false,
+        ["remainig"] = 1/0
+    }
+    return Transmitter:new(config.server, config.robot, data):init()
+end
+
+function Transmitter:new(server, robot, data)
     local object = {
         modem = require("component").modem,
-        serverPort = serverPort,
-        robotPort = robotPort,
-        dump = Queue:new()
+        server = server,
+        robot = robot,
+        sync = SyncData:new(data)
     }
-    object.modem.open(serverPort)
-    object.modem.open(robotPort)
     self.__index = self
     return setmetatable(object, self)
 end
 
-function Transmitter:messages()
-    local messages = self.dump
-    self.dump = Queue:new()
-    return messages
+function Transmitter:send(args)
+    self.modem.broadcast(self.robot, table.unpack(args))
+    logger.outputMessage(table.concat(args, ", "))
 end
 
-function Transmitter:sync(robot, robotPositions, start, stop, coins, fully)
-    robotPositions[robot.name] = robot.position
-    local robots = {}
-    for name, point in pairs(robots) do
-        robots[name] = false
-    end
-    local sync = false
-    local change = fully or false
-    while (not sync) do
-        local position = robotPositions[robot.name]
-        self:send(self.robotPort, string.format("sync %s %d %d %d", robot.name, position.x, position.y, position.z)) 
-        local it = self:messages():iterator()
-        while (it:hasNext()) do
-            local message = it:next()
-            local name = message.name
-            if (name == "sync") then
-                robotPositions[message.from] = message.args.position
-                robots[message.from] = true
-            elseif (name == "gamestart") then
-                start = true
-            elseif (name == "gamestop") then
-                stop = true
-            elseif (name == "setcoin") then
-                local coin = message.args.position
-                coins[coin:toString()] = coin
-                change = true
-            elseif (name == "unsetcoin") then
-                local coin = message.args.position
-                coins[coin:toString()] = nil
-                change = true
-            end
+function Transmitter:update(message)
+    local name = message.name
+    if (name == "sync") then
+        self.sync.data.positions[message.from] = message.args.position
+        self.sync.data.syncs[message.from] = true
+        local coin = message.args.coin
+        if (coin) then
+            self.sync.data.coins[coin:toString()] = nil
         end
-        sync = not change or Stream.valueOf(robots):all()
-        os.sleep(sync and 1 or 2)
+    elseif (name == "gamestart") then
+        self.sync.data.start = true
+    elseif (name == "gamestop") then
+        self.sync.data.stop = true
+    elseif (name == "setcoin") then
+        local coin = message.args.position
+        self.sync.data.coins[coin:toString()] = {coin, os.clock()}
+    elseif (name == "unsetcoin") then
+        local coin = message.args.position
+        self.sync.data.coins[coin:toString()] = nil
+    elseif (name == "time") then
+        self.sync.data.remainig = message.args.remainig - (os.clock() - message.args.clock)
     end
-    return robotPositions, start, stop, coins, change
-end
-
-function Transmitter:send(port, text)
-    self.modem.broadcast(port, text)
-    logger.outputMessage(text)
 end
 
 function Transmitter:init()
-    event.listen("modem_message", function (event, rec_addr, from, port, distance, text)
-        if (port == self.robotPort or port == self.serverPort) then
-            local message = Message.valueOf(text)
-            if (message == nil) then
+    self.modem.open(self.server)
+    self.modem.open(self.robot)
+    event.listen("modem_message", function (...)
+        local recv = {...}
+        local port = recv[4]
+        local args = {}
+        for i, arg in pairs(recv) do
+            if (i > 5) then 
+                args[#args + 1] = arg
+            end
+        end
+        local text = table.concat(args, ", ")
+        if (port == self.robot or port == self.server) then
+            local message = Message.valueOf(args)
+            if (not message) then
                 logger.errorMessage(string.format("Message \"%s\" have wrong format", text))
             else
                 if (message.from == "server") then
@@ -138,10 +165,11 @@ function Transmitter:init()
                 else
                     logger.inputRobotMessage(text)
                 end
-                self.dump:push(message)
+                self:update(message)
             end
         end
     end)
+    return self
 end
 
 return Transmitter

@@ -23,17 +23,19 @@ local Map = {}
 
 local inf = 1/0
 
-function Map:new(position, size, blocks)
+function Map:init(position, size, blocks, rootOfWaves)
     local object = {
         position = position,
         size = size,
-        blocks = blocks
+        blocks = blocks,
+        rootOfWaves = rootOfWaves,
+        changed = true
     }
     self.__index = self
     return setmetatable(object, self)
 end
 
-function Map:load(config)
+function Map.load(config)
     local position = config.position
     local size = config.size
     local blocks = {}
@@ -47,15 +49,17 @@ function Map:load(config)
             error(string.format("Undefound map token %s", config.blocks[i]))
         end
     end
-    return Map:new(position, size, blocks)
+    return Map:init(position, size, blocks, nil)
 end
 
 function Map:repair()
-    for i, block in pairs(self.blocks) do
-        if (block) then
-            self.blocks[i] = Block:new(inf, Vector:new(0, 0, 0), Vector:new(0, 0, 0))
-        end
+    for _, block in pairs(self.blocks) do
+        block.value = inf
+        block.direct = Vector.zero()
+        block.navigation = Vector.zero()
     end
+    self.rootOfWaves = nil
+    self.changed = true
 end
 
 function Map:index(point)
@@ -76,12 +80,28 @@ function Map:get(point)
     return self.blocks[self:index(point)]
 end
 
-function Map:set(point, value, direct, navigation)
+function Map:_set(point, value, direct, navigation)
     if (not self:contains(point)) then return false end
     local block = self.blocks[self:index(point)]
     block.value = value
     block.direct = direct
     block.navigation = navigation
+    return true
+end
+
+function Map:remove(point)
+    if (not self:contains(point)) then return nil end
+    local index = self:index(point)
+    local block = self.blocks[index]
+    self.blocks[index] = nil
+    self.changed = true
+    return block
+end
+
+function Map:restore(point, block)
+    if (not self:contains(point)) then return false end
+    self.blocks[self:index(point)] = block
+    self.changed = true
     return true
 end
 
@@ -91,24 +111,16 @@ function Map:contains(point)
            (self.position.z <= point.z) and (point.z < (self.position.z + self.size.z))
 end
 
-function Map:findWay(start, finish, direct)
-    if (not self:get(start)) then return nil end
-    if (not self:get(finish)) then return nil end
-    self:set(start, 0, direct, Vector.zero())
+function Map:waveization(root, direct)
+    self:repair()
+    self.rootOfWaves = root
+    self:_set(root, 0, direct, Vector.zero())
     local queue = Queue:new()
-    queue:push(start)
-    local computer = require("computer")
-    print(string.format("memory:    %6d / %6d", computer.freeMemory(), computer.totalMemory()))
-    local j = 1
+    queue:push(root)
     local around = {Direct.North, Direct.South, Direct.West, Direct.East, Direct.Up, Direct.Down}
     while (not queue:isEmpty()) do
         local current = queue:pull()
         local currentBlock = self:get(current)
-        if (j % 100 == 0) then
-            print(string.format("memory[%3d]{%3d}: %6d / %6d", j, queue:length(), computer.freeMemory(), computer.totalMemory()))
-            os.sleep(0.2)
-        end
-        j = j + 1
         for i = 1, #around do
             local navigation = around[i]
             local path = current + navigation
@@ -119,27 +131,33 @@ function Map:findWay(start, finish, direct)
             local block = self:get(path)
             if (block and fine < block.value) then
                 local direct = navigation.z == 0 and navigation or currentBlock.direct
-                self:set(path, fine, direct, navigation)
+                self:_set(path, fine, direct, navigation)
                 if (not queue:contains(path)) then
                     queue:push(path)
                 end
             end
         end
     end
-    print("way builded")
+end
+
+function Map:findWay(start, finish, direct)
+    if (not self:get(start)) then return nil end
+    if (not self:get(finish)) then return nil end
+    if ((start - finish):sabs() == 0) then return Way:new(start, finish) end
+    if self.changed or not self.rootOfWaves:equals(start) then
+        self:waveization(start, direct) 
+    end
     if (self:get(finish) == inf) then
-        self:repair()
         return nil
     end
     local current = finish
-    local way = Way:new()
+    local way = Way:new(finish, start)
     while (not current:equals(start)) do
         local navigation = self:get(current).navigation
         way:append(navigation)
         current = current - navigation
-    end    
+    end
     way:reverse()
-    self:repair()
     return way
 end
 
@@ -156,7 +174,7 @@ function Map:findCheckpointTraversal(checkpoints)
             if (i == j) then
                 graph[i][j] = inf
             else 
-                local way = self:findWay(checkpoints[j], checkpoints[i], Vector:new(0, 0, 0))
+                local way = self:findWay(checkpoints[j], checkpoints[i], Vector.zero())
                 local length = way:length()
                 ways[i][j] = way
                 graph[i][j] = length
@@ -181,12 +199,23 @@ function Map:findCheckpointTraversal(checkpoints)
     return traversal
 end
 
-function Map:subCoins(coins, robotPostions)
+function Map:subCoins(coins, postions, name)
     local robotCoins = {}
-    for name, _ in pairs(robotPostions) do
-        robotCoins[name] = coins
+    local robotNumCoins = {}
+    local numCoins = 0
+    for _, _ in pairs(coins) do
+        numCoins = numCoins + 1
     end
-    return robotCoins
+    for name, _ in pairs(postions) do
+        robotCoins[name] = coins
+        robotNumCoins[name] = numCoins
+    end
+    return robotCoins[name], robotNumCoins[name]
+end
+
+function Map:estiminateDisatence(start, finish, timesFine, appendFine)
+    local direct = finish - start
+    return (math.abs(direct.x) + math.abs(direct.y) + math.abs(direct.z)) * timesFine + appendFine
 end
 
 return Map

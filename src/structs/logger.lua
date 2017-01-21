@@ -2,8 +2,8 @@
 local Logger = {}
 
 Logger.printInfo = true
-Logger.printErrorMessages = false
-Logger.printInputServerMessages = true
+Logger.printErrorMessages = true
+Logger.printInputServerMessages = false
 Logger.printInputRobotMessages = false
 Logger.printOutputMessages = false
 

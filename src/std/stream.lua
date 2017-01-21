@@ -83,7 +83,7 @@ end
 function Stream:indexedReduce(reducor)
     local result = nil
     for key, value in pairs(self.instance) do
-        if (not result) then 
+        if (result == nil) then 
             result = value
         else
             result = reducor(result, key, value)

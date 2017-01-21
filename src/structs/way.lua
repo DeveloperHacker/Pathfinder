@@ -32,9 +32,11 @@ end
 
 local Way = {}
 
-function Way:new()
+function Way:new(start, finish)
     local object = {
-        steps = {}
+        steps = {},
+        start = start,
+        finish = finish
     }
     self.__index = self
     return setmetatable(object, self)
@@ -42,10 +44,6 @@ end
 
 function Way:get(index)
     return self.steps[index]
-end
-
-function Way:last()
-    return self:get(self:length())
 end
 
 function Way:length()
@@ -69,6 +67,7 @@ function Way:reverse()
     for i = 1, math.floor(length / 2) do
         self.steps[i], self.steps[length - i + 1] = self.steps[length - i + 1], self.steps[i]
     end
+    self.start, self.finish = self.finish, self.start
 end
 
 function Way:toString()
