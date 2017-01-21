@@ -94,7 +94,7 @@ function configurator.config(home, color)
         { base = Vector:new(-951, 630, 12), direct = Direct.West  }
     }
     
-    config.main.averageStepTime = 2
+    config.main.averageStepTime = 3
     config.main.averageCalcTime = 2
     config.main.base = bases[home].base
     config.main.direct = bases[home].direct
